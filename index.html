@@ -185,6 +185,7 @@
   .card > h3 .dot{width:7px;height:7px;border-radius:50%;background:var(--brand);flex:0 0 auto}
   .card > .sub{margin:0 0 20px;color:var(--text-secondary);font-size:13px;max-width:74ch}
 
+  .mini-h{font-size:12px;font-weight:700;color:var(--text-secondary);margin:2px 0 8px}
   .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(186px,1fr));gap:14px;margin-bottom:22px}
   .kpi{
     background:var(--surface-1);border:1px solid var(--border);border-radius:16px;padding:17px 19px;
@@ -901,9 +902,10 @@ function renderOverview(){
 
   h += '<div class="dlbar" style="margin:-4px 0 22px">'
     + '<button class="primary" id="dlAll">Download full report for Excel</button>'
+    + '<button id="dlAllCsv">All student data (CSV)</button>'
     + '<button id="dlDocO">Download cohort report (Word)</button>'
     + '<span class="hint">Excel workbook: summary, distributions, the full analytics, and a row per student. '
-    + 'Word report: a written cohort summary for sharing. Both follow the filter above.</span></div>';
+    + 'CSV: every field, one row per student, for your own analysis. Word: a written cohort summary. All follow the filter above.</span></div>';
 
   h += '<div class="card"><h3><span class="dot"></span>Career distribution</h3>'
     +  '<p class="sub">Primary career goal chosen by each student — this is what drives the mentoring groups. '
@@ -1002,30 +1004,7 @@ function renderOverview(){
       ['Biggest readiness gap', gaps.length ? gaps[0].key + ' — ' + gaps[0].n + ' missing' : '—']
     ];
 
-    var studentHead = ['Student Name','Register / Application No.','Institution','Programme',
-      'Year of Study','Section','Academic Year','Primary Career Goal','Dream Organisation',
-      'Avg Self-Rating']
-      .concat(SKILLS)
-      .concat(READY.map(function(k){ return 'Has ' + k; }))
-      .concat(['Clubs of Interest','Learning Style','Preferred Contact','Languages',
-               'Mobile','Email','Emergency Contact','Needs Attention','Reason Flagged',
-               'How the mentor can help','Biggest challenge']);
-
-    var studentRows = S.slice().sort(function(a,b){ return a.name.localeCompare(b.name); })
-      .map(function(s){
-        return [s.name, s.reg, s.institution, s.progShort, s.yearOfStudy, s.section, s.acadYear,
-                s.careerLabel, s.dream, s.avg!=null?num(s.avg.toFixed(1)):'']
-          .concat(SKILLS.map(function(k){ return s.ratings[k] || ''; }))
-          .concat(READY.map(function(k){ return s.ready[k] ? 'Yes' : 'No'; }))
-          .concat([s.clubs.join(', '), s.learn.join(', '), s.comm.join(', '), s.langs,
-                   s.mobile, s.email, [s.emergencyPerson, s.emergency].filter(Boolean).join(' — '),
-                   needsAttention(s) ? 'Yes' : 'No', whyFlagged(s).join('; '), s.help, s.challenge]);
-      });
-
-    var studentWidths = [26,22,26,26,16,11,14,30,22,15]
-      .concat(SKILLS.map(function(){ return 13; }))
-      .concat(READY.map(function(){ return 13; }))
-      .concat([34,30,22,24,15,32,32,16,32,52,52]);
+    var studentHead = masterHead(), studentRows = masterRows(S), studentWidths = masterWidths();
 
     downloadXLSX('MH Cockpit - Full Report.xlsx', [
       { name:'Summary', title:'MH Cockpit — Student Profile Report', widths:[38,44],
@@ -1052,8 +1031,13 @@ function renderOverview(){
           return [c.key, c.n, total ? num((c.n/total*100).toFixed(1)) : 0]; }) },
       { name:'All Students', title:'Every student, every answer used in this dashboard',
         widths:studentWidths, header:studentHead, rows:studentRows,
-        flag:function(r){ return r[r.length-4] === 'Yes'; } }
+        flag:function(r){ return r[r.length-2] === 'Yes'; } }
     ].concat(analyticsSheets(S, computeAnalytics(S))));
+  };
+  if(el('dlAllCsv')) el('dlAllCsv').onclick = function(){
+    // complete flat CSV of every student, every field
+    var head = MASTER_HEAD(), rows = MASTER_ROWS(S);
+    downloadCSV([head].concat(rows), 'MH Cockpit - All student data.csv');
   };
   if(el('dlDocO')) el('dlDocO').onclick = function(){ var s2=view(); downloadDocReport(s2, computeAnalytics(s2)); };
 }
@@ -1662,6 +1646,84 @@ function downloadCSV(rows, filename){
   setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
 }
 
+/* ================= MASTER DATA (every field, one row per student) ================= */
+/* Shared by the Excel "All Students" sheet and the flat "All student data" CSV. */
+function masterColumns(){
+  return [
+    ['Student Name', function(s){return s.name;}, 26],
+    ['Register / Application No.', function(s){return s.reg;}, 22],
+    ['Institution', function(s){return s.institution;}, 26],
+    ['Programme', function(s){return s.progShort;}, 26],
+    ['Year of Study', function(s){return s.yearOfStudy;}, 14],
+    ['Section', function(s){return s.section;}, 10],
+    ['Academic Year', function(s){return s.acadYear;}, 13],
+    ['Gender', function(s){return s.gender;}, 10],
+    ['Date of Birth', function(s){return s.dob;}, 13],
+    ['Blood Group', function(s){return s.blood;}, 11],
+    ['Mobile', function(s){return s.mobile;}, 15],
+    ['Email', function(s){return s.email;}, 30],
+    ['Emergency Contact', function(s){return [s.emergencyPerson, s.emergency].filter(Boolean).join(' - ');}, 30],
+    ["Father's Name", function(s){return s.father;}, 22],
+    ["Father's Occupation", function(s){return s.fatherOcc;}, 22],
+    ["Mother's Name", function(s){return s.mother;}, 22],
+    ["Mother's Occupation", function(s){return s.motherOcc;}, 22],
+    ['Annual Family Income', function(s){return s.income;}, 22],
+    ['SSLC %', function(s){var v=parsePct(s.sslc);return v!=null?v:s.sslc;}, 10],
+    ['SSLC Institution', function(s){return s.sslcInst;}, 26],
+    ['HSC %', function(s){var v=parsePct(s.hsc);return v!=null?v:s.hsc;}, 10],
+    ['HSC Institution', function(s){return s.hscInst;}, 26],
+    ['Primary Career Goal', function(s){return s.careerLabel;}, 30],
+    ['Other Careers Considered', function(s){return (s.careerAlt||[]).join(', ');}, 30],
+    ['Dream Organisation', function(s){return s.dream;}, 24],
+    ['Career Goal after Graduation', function(s){return s.goal;}, 34],
+    ['Five-Year Plan', function(s){return s.plan;}, 46],
+    ['Why Aviation', function(s){return s.why;}, 46],
+    ['Inspired By', function(s){return s.inspired;}, 34],
+    ['Has Certification', function(s){return String(s.certYN).toLowerCase().indexOf('yes')===0?'Yes':(s.certList?'Yes':'No');}, 12],
+    ['Certifications', function(s){return [s.certList, s.certs].filter(Boolean).join('; ');}, 34],
+    ['DGCA Papers Cleared', function(s){return s.dgca;}, 22],
+    ['Internship Completed', function(s){return s.intern;}, 14],
+    ['Internship Organisation', function(s){return s.internOrg;}, 26],
+    ['Industrial Visits', function(s){return s.visits;}, 22],
+    ['Languages', function(s){return s.langs;}, 22],
+    ['Technical Skills', function(s){return s.tech;}, 28],
+    ['Software Skills', function(s){return s.soft;}, 24],
+    ['Sports', function(s){return s.sports;}, 20],
+    ['Hobbies', function(s){return s.hobbies;}, 24],
+    ['Clubs of Interest', function(s){return (s.clubs||[]).join(', ');}, 30],
+    ['Learning Style', function(s){return (s.learn||[]).join(', ');}, 24],
+    ['Preferred Contact', function(s){return (s.comm||[]).join(', ');}, 22],
+    ['Strengths', function(s){return s.strengths;}, 40],
+    ['Areas to Improve', function(s){return s.improve;}, 40],
+    ['Biggest Challenge', function(s){return s.challenge;}, 46],
+    ['How mentor can help', function(s){return s.help;}, 46],
+    ['Medical Conditions', function(s){return s.medical;}, 24],
+    ['Allergies', function(s){return s.allergies;}, 20],
+    ['Regular Medication', function(s){return s.meds;}, 20],
+    ['Fitness Issues', function(s){return s.fitness;}, 20]
+  ];
+}
+function masterHead(){
+  return masterColumns().map(function(c){return c[0];})
+    .concat(SKILLS).concat(READY.map(function(k){ return 'Has ' + k; }))
+    .concat(['Avg Self-Rating','Needs Attention','Reason Flagged']);
+}
+function masterWidths(){
+  return masterColumns().map(function(c){return c[2];})
+    .concat(SKILLS.map(function(){ return 12; }))
+    .concat(READY.map(function(){ return 12; }))
+    .concat([13,15,52]);
+}
+function masterRows(S){
+  var cols = masterColumns();
+  return S.slice().sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(s){
+    return cols.map(function(c){ return c[1](s); })
+      .concat(SKILLS.map(function(k){ return s.ratings[k] || ''; }))
+      .concat(READY.map(function(k){ return s.ready[k] ? 'Yes' : 'No'; }))
+      .concat([s.avg!=null?num(s.avg.toFixed(1)):'', needsAttention(s)?'Yes':'No', whyFlagged(s).join('; ')]);
+  });
+}
+
 /* ======================================================================
    DEEP ANALYTICS  — everything below is computed live from the same data
    ====================================================================== */
@@ -1672,6 +1734,27 @@ function median(a){
   return s.length%2 ? s[m] : (s[m-1]+s[m])/2;
 }
 function pct(n,d){ return d ? Math.round(n/d*100) : 0; }
+
+/* SSLC/HSC marks come in as "85%", "85", "8.5", "9.2/10", "CGPA 8.7", "450/500".
+   Normalise everything to a percentage 0–100, or null if it can't be read. */
+function parsePct(raw){
+  var s = String(raw==null?'':raw).trim();
+  if(!s) return null;
+  var frac = s.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/); // "450/500" or "9.2/10"
+  if(frac){ var den=parseFloat(frac[2]); if(den>0) return Math.round(parseFloat(frac[1])/den*1000)/10; }
+  var m = s.match(/(\d+(?:\.\d+)?)/);
+  if(!m) return null;
+  var v = parseFloat(m[1]);
+  if(isNaN(v)) return null;
+  if(v>0 && v<=10 && /cgpa|gpa|\bpoint|out of 10|\/10/i.test(s)) return Math.round(v*100)/10; // CGPA hinted
+  if(v>0 && v<=10 && !/%/.test(s)) return Math.round(v*100)/10;   // bare 0–10 → treat as CGPA×10
+  if(v>100) return null;
+  return Math.round(v*10)/10;
+}
+function acadBands(vals){
+  var bands=[['<50',0,50],['50–59',50,60],['60–69',60,70],['70–79',70,80],['80–89',80,90],['90–100',90,100.01]];
+  return bands.map(function(b){ return { key:b[0], n:vals.filter(function(v){return v>=b[1] && v<b[2];}).length }; });
+}
 
 var THEMES = [
   {name:'Money / funding',        kw:['money','fund','financ','fees','afford','expensiv','scholarship','loan']},
@@ -1770,6 +1853,40 @@ function computeAnalytics(S){
     if(m) dayCount[m[1]]=(dayCount[m[1]]||0)+1;
   });
   A.timeline = Object.keys(dayCount).map(function(k){return {key:k,n:dayCount[k]};});
+
+  // ---- academics (SSLC & HSC, normalised to %) ----
+  A.sslcVals = S.map(function(s){return parsePct(s.sslc);}).filter(function(v){return v!=null;});
+  A.hscVals  = S.map(function(s){return parsePct(s.hsc);}).filter(function(v){return v!=null;});
+  A.sslcAvg = mean(A.sslcVals); A.hscAvg = mean(A.hscVals);
+  A.sslcBands = acadBands(A.sslcVals); A.hscBands = acadBands(A.hscVals);
+  A.acadByCareer = A.careers.slice(0,8).map(function(c){
+    var grp = S.filter(function(s){return s.careerLabel===c.key;});
+    var sv = grp.map(function(s){return parsePct(s.sslc);}).filter(function(v){return v!=null;});
+    var hv = grp.map(function(s){return parsePct(s.hsc);}).filter(function(v){return v!=null;});
+    return { key:c.key, n:c.n, sslc:mean(sv), hsc:mean(hv) };
+  });
+
+  // ---- readiness by item (how many HAVE each of the six) ----
+  A.readyByItem = READY.map(function(k){
+    return { key:k, n:S.filter(function(s){return s.ready[k];}).length };
+  }).sort(function(a,b){return a.n-b.n;}); // weakest coverage first
+
+  // ---- certifications & DGCA by career ----
+  function hasVal(v){ v=(v||'').toLowerCase().trim(); return v && ['none','nil','n/a','na','no','-'].indexOf(v)===-1; }
+  A.certDgcaByCareer = A.careers.slice(0,10).map(function(c){
+    var grp = S.filter(function(s){return s.careerLabel===c.key;});
+    return { key:c.key, n:grp.length,
+      certs: grp.filter(function(s){return hasVal(s.certs)||String(s.certYN).toLowerCase().indexOf('yes')===0;}).length,
+      dgca: grp.filter(function(s){return hasVal(s.dgca);}).length,
+      intern: grp.filter(function(s){return String(s.intern).toLowerCase().indexOf('yes')===0;}).length };
+  });
+
+  // ---- internship organisations ----
+  var orgCount={};
+  S.forEach(function(s){ var o=String(s.internOrg||'').replace(/\s+/g,' ').trim();
+    if(o && !hasVal(o)===false){ var k=o.replace(/[.\s]+$/,''); if(k.length>1){ k=k.charAt(0).toUpperCase()+k.slice(1); orgCount[k]=(orgCount[k]||0)+1; } } });
+  A.internOrgs = sortedPairs(orgCount).slice(0,12);
+
   return A;
 }
 
@@ -1822,6 +1939,8 @@ function renderAnalytics(){
     + kpi('Average readiness', A.avgReady!=null?A.avgReady.toFixed(1)+' / 6':'—','resume, LinkedIn, passport, etc.')
     + kpi('Strong English', pct(A.english,total)+'%','rated their English 4 or 5')
     + kpi('Done an internship', pct(A.intern,total)+'%', A.intern+' of '+total+' students')
+    + kpi('Avg HSC / 12th', A.hscAvg!=null?A.hscAvg.toFixed(1)+'%':'—', A.hscVals.length+' with marks on file')
+    + kpi('Avg SSLC / 10th', A.sslcAvg!=null?A.sslcAvg.toFixed(1)+'%':'—', A.sslcVals.length+' with marks on file')
     + kpi('Medical note on file', A.medical, 'need a confidential check-in', A.medical>0)
     + '</div>';
 
@@ -1834,7 +1953,41 @@ function renderAnalytics(){
          A.careerSkill.map(function(r){ return [r.key,r.n].concat(SKILLS.map(function(k){return r.skills[k]!=null?r.skills[k].toFixed(1):'—';})).concat([r.overall!=null?r.overall.toFixed(1):'—']); }))
     +  '</div>';
 
+  // ---- academics ----
+  if(A.sslcVals.length || A.hscVals.length){
+    h += '<div class="card"><h3><span class="dot"></span>Academic performance (school marks)</h3>'
+      +  '<p class="sub">SSLC (10th) and HSC (12th) marks normalised to a percentage. Averages: '
+      +  'HSC <b>'+(A.hscAvg!=null?A.hscAvg.toFixed(1)+'%':'—')+'</b>, SSLC <b>'+(A.sslcAvg!=null?A.sslcAvg.toFixed(1)+'%':'—')+'</b>. '
+      +  'Use it to spot who may need academic support, and to sense-check ambitious career goals against the school record.</p>'
+      +  '<div class="grid2">'
+      +    '<div><div class="mini-h">HSC / 12th distribution</div>'+hbar(A.hscBands,{total:A.hscVals.length,aria:'HSC band distribution'})+'</div>'
+      +    '<div><div class="mini-h">SSLC / 10th distribution</div>'+hbar(A.sslcBands,{total:A.sslcVals.length,aria:'SSLC band distribution'})+'</div>'
+      +  '</div>'
+      +  tableView(['Career group','Students','Avg HSC %','Avg SSLC %'],
+           A.acadByCareer.map(function(r){ return [r.key,r.n,r.hsc!=null?r.hsc.toFixed(1):'—',r.sslc!=null?r.sslc.toFixed(1):'—']; }), 'Academics by career group')
+      +  '</div>';
+  }
+
   h += '<div class="grid2">';
+
+  h += '<div class="card"><h3><span class="dot"></span>Career-readiness — which items are missing</h3>'
+    +  '<p class="sub">How many students already have each of the six items. The shortest bars are your fastest cohort-wide wins (e.g. a resume/LinkedIn drive).</p>'
+    +  hbar(A.readyByItem,{total:total, aria:'Readiness by item'})
+    +  '</div>';
+
+  h += '<div class="card"><h3><span class="dot"></span>Certifications, DGCA &amp; internships by career</h3>'
+    +  '<p class="sub">Progress markers per career group — who is actually building the credentials their goal needs.</p>'
+    +  tableView(['Career group','Students','Have a certification','Cleared DGCA papers','Done internship'],
+         A.certDgcaByCareer.map(function(r){ return [r.key, r.n,
+           r.certs+' ('+pct(r.certs,r.n)+'%)', r.dgca+' ('+pct(r.dgca,r.n)+'%)', r.intern+' ('+pct(r.intern,r.n)+'%)']; }), 'Show the table')
+    +  '</div>';
+
+  if(A.internOrgs.length){
+    h += '<div class="card"><h3><span class="dot"></span>Internship organisations</h3>'
+      +  '<p class="sub">Where students have interned — useful for building industry links and referrals.</p>'
+      +  hbar(A.internOrgs,{total:total, aria:'Internship organisations'})
+      +  '</div>';
+  }
 
   h += '<div class="card"><h3><span class="dot"></span>Where the cohort sits overall</h3>'
     +  '<p class="sub">Each student’s average across all ten skills, grouped into bands. A big bar on the left is a training priority.</p>'
@@ -1940,6 +2093,21 @@ function analyticsSheets(S,A){
     header:['Category','Students'],
     rows:[['— GENDER —','']].concat(A.gender.map(function(x){return [x.key,x.n];}))
         .concat([['','']]).concat([['— BLOOD GROUP —','']]).concat(A.blood.map(function(x){return [x.key,x.n];})) });
+  sheets.push({ name:'Academics', title:'Academic performance (SSLC / HSC, %)', widths:[22,14,14],
+    header:['Band','HSC students','SSLC students'],
+    rows:A.hscBands.map(function(b,i){ return [b.key, b.n, (A.sslcBands[i]||{}).n||0]; })
+        .concat([['','',''],['Average %', A.hscAvg!=null?num(A.hscAvg.toFixed(1)):'', A.sslcAvg!=null?num(A.sslcAvg.toFixed(1)):'']]) });
+  sheets.push({ name:'Academics by career', title:'Average school marks by career group', widths:[30,10,12,12],
+    header:['Career group','Students','Avg HSC %','Avg SSLC %'],
+    rows:A.acadByCareer.map(function(r){ return [r.key, r.n, r.hsc!=null?num(r.hsc.toFixed(1)):'', r.sslc!=null?num(r.sslc.toFixed(1)):'']; }) });
+  sheets.push({ name:'Readiness by item', title:'Career-readiness — coverage per item', widths:[26,12,12,10],
+    header:['Item','Have it','Missing it','Have %'],
+    rows:A.readyByItem.map(function(r){ return [r.key, r.n, A.total-r.n, pct(r.n,A.total)]; }) });
+  sheets.push({ name:'Certs, DGCA, internships', title:'Credentials by career group', widths:[30,10,14,16,14],
+    header:['Career group','Students','Have certification','Cleared DGCA papers','Done internship'],
+    rows:A.certDgcaByCareer.map(function(r){ return [r.key, r.n, r.certs, r.dgca, r.intern]; }) });
+  if(A.internOrgs.length) sheets.push({ name:'Internship orgs', title:'Internship organisations', widths:[36,12],
+    header:['Organisation','Students'], rows:A.internOrgs.map(function(x){return [x.key,x.n];}) });
   return sheets;
 }
 
